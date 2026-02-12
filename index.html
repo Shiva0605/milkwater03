@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bbucky Water Monitoring</title>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+  font-family:Arial;
+  background:#0f172a;
+  color:#00ffff;
+  margin:0;
+  padding:20px;
+}
+
+.container{
+  max-width:1200px;
+  margin:auto;
+}
+
+h1{
+  text-align:center;
+}
+
+select{
+  background:#16213e;
+  color:#00ffff;
+  border:2px solid #00ffff;
+  padding:10px;
+  border-radius:8px;
+}
+
+.card{
+  background:#16213e;
+  border:2px solid #00ffff;
+  border-radius:12px;
+  padding:20px;
+  margin-top:20px;
+}
+
+.hidden{ display:none; }
+
+.online{ color:#00ff88; }
+.offline{ color:#ff4444; }
+
+.tabs{
+  display:flex;
+  justify-content:center;
+  gap:10px;
+  margin-top:20px;
+}
+
+.tab-button{
+  background:#16213e;
+  color:#00ffff;
+  border:2px solid #00ffff;
+  padding:8px 15px;
+  border-radius:8px;
+  cursor:pointer;
+}
+
+.tab-button.active{
+  background:#00ffff;
+  color:#000;
+}
+
+canvas{
+  width:100% !important;
+  height:260px !important;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>💧 Bbucky Water Monitoring Dashboard</h1>
+
+<label>Select Water Device:</label>
+<select id="device-select">
+  <option value="">-- Select Device --</option>
+</select>
+
+<div id="connection-status">Connecting to MQTT...</div>
+
+<div id="dashboard" class="hidden">
+
+<div class="tabs">
+<button class="tab-button active" data-tab="current">Current</button>
+<button class="tab-button" data-tab="gauge">Gauge</button>
+<button class="tab-button" data-tab="history">History</button>
+</div>
+
+<div id="current-tab" class="card">
+<h2>Current Water Data</h2>
+<p id="tds-value">TDS: --</p>
+<p id="turbidity-value">Turbidity: --</p>
+<p id="online-status">--</p>
+</div>
+
+<div id="gauge-tab" class="card hidden">
+<canvas id="gauge-chart"></canvas>
+</div>
+
+<div id="history-tab" class="card hidden">
+<canvas id="history-chart"></canvas>
+</div>
+
+</div>
+</div>
+
+<script>
+
+// ================= MQTT CONFIG =================
+const MQTT_HOST = "e521ebeb353b47f5a393c0127aea1249.s1.eu.hivemq.cloud";
+const MQTT_PORT = 8884;
+const MQTT_USERNAME = "hivemq.webclient.1770890116288";
+const MQTT_PASSWORD = "?RC,stmg3S@bHFi9.02V";
+// ===============================================
+
+const client = mqtt.connect(
+  `wss://${MQTT_HOST}:${MQTT_PORT}/mqtt`,
+  {
+    username: MQTT_USERNAME,
+    password: MQTT_PASSWORD,
+    reconnectPeriod: 3000,
+    connectTimeout: 5000,
+    clean: true
+  }
+);
+
+let selectedDevice = "";
+let deviceHistories = {};
+let gaugeChart, historyChart;
+
+const connectionStatus = document.getElementById("connection-status");
+
+// 🔥 Generate 100 Water Devices
+const deviceSelect = document.getElementById("device-select");
+
+for (let i = 1; i <= 100; i++) {
+  const id = "WATER_" + i.toString().padStart(2,"0");
+  const option = document.createElement("option");
+  option.value = id;
+  option.textContent = id;
+  deviceSelect.appendChild(option);
+}
+
+// MQTT EVENTS
+client.on("connect", () => {
+  connectionStatus.textContent = "🟢 MQTT Connected";
+  client.subscribe("bbucky/devices/#");
+});
+
+client.on("reconnect", () => {
+  connectionStatus.textContent = "🟡 Reconnecting...";
+});
+
+client.on("error", () => {
+  connectionStatus.textContent = "🔴 MQTT Error";
+});
+
+client.on("message", (topic, message) => {
+
+  const data = JSON.parse(message.toString());
+
+  if (data.type !== "water") return;
+
+  const deviceId = data.deviceId;
+
+  if (!deviceHistories[deviceId])
+    deviceHistories[deviceId] = [];
+
+  deviceHistories[deviceId].push({
+    timestamp: Date.now(),
+    tds: data.tds,
+    turbidity: data.turbidity
+  });
+
+  if (selectedDevice === deviceId) {
+    updateUI(deviceId);
+  }
+});
+
+deviceSelect.addEventListener("change", function() {
+  selectedDevice = this.value;
+
+  if (selectedDevice) {
+    document.getElementById("dashboard").classList.remove("hidden");
+    updateUI(selectedDevice);
+  }
+});
+
+function updateUI(deviceId) {
+
+  const history = deviceHistories[deviceId];
+  if (!history || history.length === 0) return;
+
+  const latest = history[history.length - 1];
+
+  const online = Date.now() - latest.timestamp < 10000;
+
+  document.getElementById("online-status").textContent =
+    online ? "🟢 Online" : "🔴 Offline";
+
+  document.getElementById("tds-value").textContent =
+    "TDS: " + latest.tds + " ppm";
+
+  document.getElementById("turbidity-value").textContent =
+    "Turbidity: " + latest.turbidity;
+
+  updateGauge(latest.tds);
+  updateHistory(deviceId);
+}
+
+function updateGauge(value) {
+
+  const ctx = document.getElementById("gauge-chart").getContext("2d");
+
+  if (!gaugeChart) {
+    gaugeChart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: ["TDS", "Remaining"],
+        datasets: [{
+          data: [value, 1000 - value]
+        }]
+      }
+    });
+  } else {
+    gaugeChart.data.datasets[0].data = [value, 1000 - value];
+    gaugeChart.update();
+  }
+}
+
+function updateHistory(deviceId) {
+
+  const ctx = document.getElementById("history-chart").getContext("2d");
+  const history = deviceHistories[deviceId].slice(-50);
+
+  const labels = history.map((_,i)=>i+1);
+  const values = history.map(d=>d.tds);
+
+  if (!historyChart) {
+    historyChart = new Chart(ctx, {
+      type:"line",
+      data:{
+        labels:labels,
+        datasets:[{
+          label:"TDS",
+          data:values
+        }]
+      }
+    });
+  } else {
+    historyChart.data.labels = labels;
+    historyChart.data.datasets[0].data = values;
+    historyChart.update();
+  }
+}
+
+// Tab switching
+document.querySelectorAll(".tab-button").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".tab-button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+
+    document.querySelectorAll(".card").forEach(c=>c.classList.add("hidden"));
+    document.getElementById(btn.dataset.tab+"-tab").classList.remove("hidden");
+  });
+});
+
+</script>
+</body>
+</html>
