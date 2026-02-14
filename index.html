@@ -1,279 +1,343 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bbucky Water Monitoring</title>
+<title>Smart Water Quality Monitor</title>
 
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<!-- External Libraries -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/mqtt@5.1.3/dist/mqtt.min.js"></script>
 
 <style>
+
+/* ================= GLOBAL STYLES ================= */
+
+*{
+box-sizing:border-box;
+margin:0;
+padding:0;
+}
+
 body{
-  font-family:Arial;
-  background:#0f172a;
-  color:#00ffff;
-  margin:0;
-  padding:20px;
+font-family: 'Segoe UI', sans-serif;
+background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+color:#ffffff;
+min-height:100vh;
 }
 
 .container{
-  max-width:1200px;
-  margin:auto;
+max-width:1200px;
+margin:auto;
+padding:15px;
 }
 
-h1{
-  text-align:center;
+/* ================= HEADER ================= */
+
+.header{
+text-align:center;
+padding:20px 0;
+font-size:24px;
+font-weight:bold;
+letter-spacing:1px;
 }
 
-select{
-  background:#16213e;
-  color:#00ffff;
-  border:2px solid #00ffff;
-  padding:10px;
-  border-radius:8px;
-}
+/* ================= CARD ================= */
 
 .card{
-  background:#16213e;
-  border:2px solid #00ffff;
-  border-radius:12px;
-  padding:20px;
-  margin-top:20px;
+background:rgba(255,255,255,0.07);
+padding:18px;
+border-radius:15px;
+margin-bottom:15px;
+box-shadow:0 8px 25px rgba(0,0,0,0.4);
+transition:0.3s;
 }
 
-.hidden{ display:none; }
-
-.online{ color:#00ff88; }
-.offline{ color:#ff4444; }
-
-.tabs{
-  display:flex;
-  justify-content:center;
-  gap:10px;
-  margin-top:20px;
+.card:hover{
+transform:translateY(-3px);
 }
 
-.tab-button{
-  background:#16213e;
-  color:#00ffff;
-  border:2px solid #00ffff;
-  padding:8px 15px;
-  border-radius:8px;
-  cursor:pointer;
+/* ================= STATUS COLORS ================= */
+
+.safe{
+color:#00ff88;
+font-weight:bold;
 }
 
-.tab-button.active{
-  background:#00ffff;
-  color:#000;
+.unsafe{
+color:#ff4d4d;
+font-weight:bold;
 }
 
-canvas{
-  width:100% !important;
-  height:260px !important;
+.connected{
+color:#00ff00;
+font-weight:bold;
 }
+
+.disconnected{
+color:#ff8800;
+font-weight:bold;
+}
+
+/* ================= VALUE DISPLAY ================= */
+
+.big-value{
+font-size:32px;
+margin-top:10px;
+}
+
+.small-label{
+font-size:14px;
+opacity:0.8;
+}
+
+/* ================= SELECT ================= */
+
+select{
+width:100%;
+padding:12px;
+border-radius:10px;
+border:none;
+font-size:16px;
+margin-top:10px;
+}
+
+/* ================= GRID ================= */
+
+.grid{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:15px;
+}
+
+/* ================= MOBILE ================= */
+
+@media(max-width:768px){
+.grid{
+grid-template-columns:1fr;
+}
+.big-value{
+font-size:26px;
+}
+.header{
+font-size:20px;
+}
+}
+
+/* ================= ANIMATION ================= */
+
+.fade{
+animation:fadeIn 0.6s ease-in-out;
+}
+
+@keyframes fadeIn{
+from{opacity:0;transform:translateY(10px);}
+to{opacity:1;transform:translateY(0);}
+}
+
 </style>
 </head>
 
 <body>
+
 <div class="container">
 
-<h1>💧 Bbucky Water Monitoring Dashboard</h1>
+<div class="header">
+💧 Smart Water Quality IoT Dashboard
+</div>
 
-<label>Select Water Device:</label>
-<select id="device-select">
-  <option value="">-- Select Device --</option>
+<!-- DEVICE SELECT -->
+<div class="card fade">
+<div class="small-label">Select Device</div>
+<select id="deviceSelect">
+<option value="">-- Select WP Device --</option>
+<script>
+for(let i=1;i<=18;i++){
+let id=i.toString().padStart(2,'0');
+document.write(`<option value="WP_${id}">WP_${id}</option>`);
+}
+</script>
 </select>
-
-<div id="connection-status">Connecting to MQTT...</div>
-
-<div id="dashboard" class="hidden">
-
-<div class="tabs">
-<button class="tab-button active" data-tab="current">Current</button>
-<button class="tab-button" data-tab="gauge">Gauge</button>
-<button class="tab-button" data-tab="history">History</button>
+<div id="connectionStatus" class="disconnected" style="margin-top:10px;">
+NOT CONNECTED
+</div>
 </div>
 
-<div id="current-tab" class="card">
-<h2>Current Water Data</h2>
-<p id="tds-value">TDS: --</p>
-<p id="turbidity-value">Turbidity: --</p>
-<p id="online-status">--</p>
+<!-- CURRENT STATUS -->
+<div class="card fade">
+<div class="grid">
+
+<div>
+<div class="small-label">TDS VALUE</div>
+<div id="tdsValue" class="big-value">--</div>
+<div id="tdsStatus">--</div>
 </div>
 
-<div id="gauge-tab" class="card hidden">
-<canvas id="gauge-chart"></canvas>
-</div>
-
-<div id="history-tab" class="card hidden">
-<canvas id="history-chart"></canvas>
+<div>
+<div class="small-label">TURBIDITY</div>
+<div id="turbStatus" class="big-value">--</div>
 </div>
 
 </div>
+</div>
+
+<!-- LIVE GRAPH -->
+<div class="card fade">
+<div class="small-label">Live TDS Trend (Last 20)</div>
+<canvas id="tdsChart"></canvas>
+</div>
+
 </div>
 
 <script>
 
-// ================= MQTT CONFIG =================
-const MQTT_HOST = "e521ebeb353b47f5a393c0127aea1249.s1.eu.hivemq.cloud";
-const MQTT_PORT = 8884;
-const MQTT_USERNAME = "hivemq.webclient.1770890116288";
-const MQTT_PASSWORD = "?RC,stmg3S@bHFi9.02V";
-// ===============================================
+/* ================= VARIABLES ================= */
 
-const client = mqtt.connect(
-  `wss://${MQTT_HOST}:${MQTT_PORT}/mqtt`,
-  {
-    username: MQTT_USERNAME,
-    password: MQTT_PASSWORD,
-    reconnectPeriod: 3000,
-    connectTimeout: 5000,
-    clean: true
-  }
-);
+let client;
+let selectedDevice="";
+let lastMessageTime=0;
+let reconnectInterval=null;
 
-let selectedDevice = "";
-let deviceHistories = {};
-let gaugeChart, historyChart;
+let tdsHistory=[];
+const MAX_POINTS=20;
 
-const connectionStatus = document.getElementById("connection-status");
+/* ================= CHART INIT ================= */
 
-// 🔥 Generate 100 Water Devices
-const deviceSelect = document.getElementById("device-select");
+const ctx=document.getElementById("tdsChart").getContext("2d");
 
-for (let i = 1; i <= 100; i++) {
-  const id = "WATER_" + i.toString().padStart(2,"0");
-  const option = document.createElement("option");
-  option.value = id;
-  option.textContent = id;
-  deviceSelect.appendChild(option);
+const tdsChart=new Chart(ctx,{
+type:"line",
+data:{
+labels:[],
+datasets:[{
+label:"TDS ppm",
+data:[],
+borderColor:"#00ffff",
+backgroundColor:"rgba(0,255,255,0.2)",
+fill:true,
+tension:0.4
+}]
+},
+options:{
+responsive:true,
+plugins:{legend:{display:false}},
+scales:{
+y:{
+beginAtZero:true
+}
+}
+}
+});
+
+/* ================= MQTT CONNECT ================= */
+
+function connectMQTT(){
+
+client=mqtt.connect("wss://test.mosquitto.org:8081/mqtt");
+
+client.on("connect",()=>{
+console.log("MQTT Connected");
+});
+
+client.on("reconnect",()=>{
+console.log("Reconnecting...");
+});
+
+client.on("error",(err)=>{
+console.log("MQTT Error:",err);
+});
+
+client.on("message",(topic,message)=>{
+
+if(topic===selectedDevice){
+
+lastMessageTime=Date.now();
+
+let data=JSON.parse(message.toString());
+
+updateUI(data);
+
 }
 
-// MQTT EVENTS
-client.on("connect", () => {
-  connectionStatus.textContent = "🟢 MQTT Connected";
-  client.subscribe("bbucky/devices/#");
 });
 
-client.on("reconnect", () => {
-  connectionStatus.textContent = "🟡 Reconnecting...";
-});
-
-client.on("error", () => {
-  connectionStatus.textContent = "🔴 MQTT Error";
-});
-
-client.on("message", (topic, message) => {
-
-  const data = JSON.parse(message.toString());
-
-  if (data.type !== "water") return;
-
-  const deviceId = data.deviceId;
-
-  if (!deviceHistories[deviceId])
-    deviceHistories[deviceId] = [];
-
-  deviceHistories[deviceId].push({
-    timestamp: Date.now(),
-    tds: data.tds,
-    turbidity: data.turbidity
-  });
-
-  if (selectedDevice === deviceId) {
-    updateUI(deviceId);
-  }
-});
-
-deviceSelect.addEventListener("change", function() {
-  selectedDevice = this.value;
-
-  if (selectedDevice) {
-    document.getElementById("dashboard").classList.remove("hidden");
-    updateUI(selectedDevice);
-  }
-});
-
-function updateUI(deviceId) {
-
-  const history = deviceHistories[deviceId];
-  if (!history || history.length === 0) return;
-
-  const latest = history[history.length - 1];
-
-  const online = Date.now() - latest.timestamp < 10000;
-
-  document.getElementById("online-status").textContent =
-    online ? "🟢 Online" : "🔴 Offline";
-
-  document.getElementById("tds-value").textContent =
-    "TDS: " + latest.tds + " ppm";
-
-  document.getElementById("turbidity-value").textContent =
-    "Turbidity: " + latest.turbidity;
-
-  updateGauge(latest.tds);
-  updateHistory(deviceId);
 }
 
-function updateGauge(value) {
+/* ================= UPDATE UI ================= */
 
-  const ctx = document.getElementById("gauge-chart").getContext("2d");
+function updateUI(data){
 
-  if (!gaugeChart) {
-    gaugeChart = new Chart(ctx, {
-      type: "doughnut",
-      data: {
-        labels: ["TDS", "Remaining"],
-        datasets: [{
-          data: [value, 1000 - value]
-        }]
-      }
-    });
-  } else {
-    gaugeChart.data.datasets[0].data = [value, 1000 - value];
-    gaugeChart.update();
-  }
+let tdsVal=data.TDS_Value;
+let tdsStat=data.TDS_Status.replace(/[^A-Z ]/g,"").trim();
+let turbStat=data.Turbidity_Status.replace(/[^A-Z ]/g,"").trim();
+
+document.getElementById("tdsValue").innerHTML=tdsVal+" ppm";
+
+let tdsStatusEl=document.getElementById("tdsStatus");
+tdsStatusEl.innerHTML=tdsStat;
+tdsStatusEl.className=(tdsStat==="SAFE")?"safe":"unsafe";
+
+let turbEl=document.getElementById("turbStatus");
+turbEl.innerHTML=turbStat;
+turbEl.className=(turbStat==="CLEAN")?"safe":"unsafe";
+
+updateChart(tdsVal);
+
 }
 
-function updateHistory(deviceId) {
+/* ================= UPDATE CHART ================= */
 
-  const ctx = document.getElementById("history-chart").getContext("2d");
-  const history = deviceHistories[deviceId].slice(-50);
+function updateChart(value){
 
-  const labels = history.map((_,i)=>i+1);
-  const values = history.map(d=>d.tds);
+tdsHistory.push(value);
 
-  if (!historyChart) {
-    historyChart = new Chart(ctx, {
-      type:"line",
-      data:{
-        labels:labels,
-        datasets:[{
-          label:"TDS",
-          data:values
-        }]
-      }
-    });
-  } else {
-    historyChart.data.labels = labels;
-    historyChart.data.datasets[0].data = values;
-    historyChart.update();
-  }
+if(tdsHistory.length>MAX_POINTS){
+tdsHistory.shift();
 }
 
-// Tab switching
-document.querySelectorAll(".tab-button").forEach(btn=>{
-  btn.addEventListener("click",()=>{
-    document.querySelectorAll(".tab-button").forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");
+tdsChart.data.labels=tdsHistory.map((_,i)=>i+1);
+tdsChart.data.datasets[0].data=tdsHistory;
+tdsChart.update();
 
-    document.querySelectorAll(".card").forEach(c=>c.classList.add("hidden"));
-    document.getElementById(btn.dataset.tab+"-tab").classList.remove("hidden");
-  });
+}
+
+/* ================= DEVICE SELECT ================= */
+
+document.getElementById("deviceSelect").addEventListener("change",function(){
+
+selectedDevice=this.value;
+
+if(selectedDevice!==""){
+client.subscribe(selectedDevice);
+tdsHistory=[];
+tdsChart.update();
+}
+
 });
+
+/* ================= CONNECTION MONITOR ================= */
+
+setInterval(()=>{
+
+if(selectedDevice==="") return;
+
+let now=Date.now();
+
+if(now-lastMessageTime<8000){
+document.getElementById("connectionStatus").innerHTML="CONNECTED";
+document.getElementById("connectionStatus").className="connected";
+}else{
+document.getElementById("connectionStatus").innerHTML="NOT CONNECTED";
+document.getElementById("connectionStatus").className="disconnected";
+}
+
+},2000);
+
+/* ================= START ================= */
+
+connectMQTT();
 
 </script>
+
 </body>
 </html>
